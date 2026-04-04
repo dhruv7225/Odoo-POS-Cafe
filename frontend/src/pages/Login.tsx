@@ -15,7 +15,7 @@ const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
   rememberMe: z.boolean().optional(),
-  role: z.enum(["admin", "waiter"]),
+  role: z.enum(["admin", "waiter", "kitchen"]),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -49,6 +49,8 @@ export const LoginPage: React.FC = () => {
       
       if (values.role === "admin") {
         navigate("/admin/dashboard");
+      } else if (values.role === "kitchen") {
+        navigate("/kitchen");
       } else {
         navigate("/pos");
       }
@@ -117,11 +119,11 @@ export const LoginPage: React.FC = () => {
 
           <div className="space-y-2">
             <Label>Login As</Label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <Button 
                 type="button" 
                 variant={watch("role") === "admin" ? "default" : "outline"}
-                className="h-10"
+                className="h-10 text-xs px-2"
                 onClick={() => setValue("role", "admin")}
               >
                 Admin
@@ -129,10 +131,18 @@ export const LoginPage: React.FC = () => {
               <Button 
                 type="button" 
                 variant={watch("role") === "waiter" ? "default" : "outline"}
-                className="h-10"
+                className="h-10 text-xs px-2"
                 onClick={() => setValue("role", "waiter")}
               >
                 Waiter
+              </Button>
+              <Button 
+                type="button" 
+                variant={watch("role") === "kitchen" ? "default" : "outline"}
+                className="h-10 text-xs px-2"
+                onClick={() => setValue("role", "kitchen")}
+              >
+                Kitchen
               </Button>
             </div>
           </div>
