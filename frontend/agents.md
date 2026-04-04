@@ -53,5 +53,28 @@
   - `MenuTable.tsx`: A robust `shadcn` interactive table listing out the data arrays mapping statuses (`Available` vs `Out of Stock`) and controlling delete actions seamlessly.
   - Both layers rely on `localStorage` interactions mimicking persistent backend POST / DELETE routes successfully.
 
+### 5. Floor & Table Management (`/admin/floors`)
+- **Multi-Floor Layouts**: Implemented a tabbed floor management system (`FloorTableManagement.tsx`) allowing admins to create, naming, and manage distinct restaurant areas (e.g., Ground Floor, Rooftop).
+- **Grid Visualization**: Tables are rendered as interactive cards inside a responsive grid. Each card displays table number, seat capacity, and current status.
+- **Enhanced CRUD**:
+  - `AddFloorDialog` & `AddTableDialog`: `shadcn` driven modals for quick entity creation.
+  - **Deletion Engine**: Integrated `AlertDialog` for high-stakes deletions (deleting a floor warns users about permenant table loss).
+- **Status Syncing**: Connects seamlessly with the Waiter POS flow to reflect occupancy in real-time via `localStorage`.
+
+### 6. Waiter POS Interface (`/pos`)
+- **Role-Dedicated UI**: A specialized, full-screen, high-contrast interface designed specifically for tablet/touch usage by restaurant staff.
+- **Table View**: A high-level occupancy tracker using 5 distinct color-coded status badges:
+  - `Available` (Emerald)
+  - `Waiting for Food` (Amber)
+  - `Ready to Serve` (Indigo - Animated)
+  - `Payment Pending` (Blue)
+  - `Occupied` (Red)
+- **Order Taking (`/pos/order/:id`)**:
+  - Three-tier split layout: Sidebar (Categories) -> Center (Large Product Cards) -> Right (Active Cart).
+  - Handles quantity adjustments, real-time total calculation, and "Send to Kitchen" actions.
+- **Kitchen Simulation Engine**: A background logic layer inside `POSContext.tsx` that simulates order progression (`placed` -> `preparing` -> `ready`) using timed intervals, triggering global `sonner` toast notifications when food is ready.
+- **Ready Orders Queue (`/pos/ready-orders`)**: A dedicated view for waiters to pick up prepared food and mark tables as "Served".
+- **Payment Handling**: Integrated simple "Mark as Paid" logic that resets table status back to `Available` upon transaction completion.
+
 ## Rule For Future Agents
 - This application relies on `"strict": true` and `noUnusedLocals: true` inside of the `tsconfig`. **Any unused variables, imports or loose typing** will crash the `Vite` compiler outright. Please write perfectly clean TS React code.

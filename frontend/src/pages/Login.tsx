@@ -15,6 +15,7 @@ const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
   rememberMe: z.boolean().optional(),
+  role: z.enum(["admin", "waiter"]),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -35,17 +36,22 @@ export const LoginPage: React.FC = () => {
     resolver: zodResolver(loginSchema),
     defaultValues: {
       rememberMe: false,
+      role: "admin",
     },
   });
 
-  const onSubmit = async () => {
+  const onSubmit = async (values: LoginFormValues) => {
     setIsLoading(true);
     // Simulate API call processing
     setTimeout(() => {
-      // For this mock, we default all logins to admin
-      login("admin");
+      login(values.role);
       setIsLoading(false);
-      navigate("/admin/dashboard");
+      
+      if (values.role === "admin") {
+        navigate("/admin/dashboard");
+      } else {
+        navigate("/pos");
+      }
     }, 1200);
   };
 
@@ -107,6 +113,28 @@ export const LoginPage: React.FC = () => {
             {errors.password && (
               <p className="text-sm font-medium text-destructive">{errors.password.message}</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Login As</Label>
+            <div className="grid grid-cols-2 gap-4">
+              <Button 
+                type="button" 
+                variant={watch("role") === "admin" ? "default" : "outline"}
+                className="h-10"
+                onClick={() => setValue("role", "admin")}
+              >
+                Admin
+              </Button>
+              <Button 
+                type="button" 
+                variant={watch("role") === "waiter" ? "default" : "outline"}
+                className="h-10"
+                onClick={() => setValue("role", "waiter")}
+              >
+                Waiter
+              </Button>
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">

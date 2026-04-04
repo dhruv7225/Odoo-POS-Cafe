@@ -6,6 +6,11 @@ import { LoginPage } from "./pages/Login";
 import { SignupPage } from "./pages/Signup";
 import { Dashboard } from "./pages/admin/Dashboard";
 import { MenuManagement } from "./pages/admin/MenuManagement";
+import { FloorTableManagement } from "./pages/admin/FloorTableManagement";
+import { TableView } from "./pages/pos/TableView";
+import { OrderScreen } from "./pages/pos/OrderScreen";
+import { ReadyOrders } from "./pages/pos/ReadyOrders";
+import { POSProvider } from "./context/POSContext";
 import { Toaster } from "sonner";
 
 function App() {
@@ -20,7 +25,14 @@ function App() {
           <Route path="/admin" element={<ProtectedRoute />}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="menu" element={<MenuManagement />} />
+            <Route path="floors" element={<FloorTableManagement />} />
             <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+          </Route>
+
+          <Route path="/pos" element={<ProtectedRoute allowedRoles={["waiter", "admin"]} />}>
+            <Route index element={<POSProvider><TableView /></POSProvider>} />
+            <Route path="order/:tableId" element={<POSProvider><OrderScreen /></POSProvider>} />
+            <Route path="ready-orders" element={<POSProvider><ReadyOrders /></POSProvider>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

@@ -3,7 +3,7 @@
 export interface User {
   name: string;
   email: string;
-  role: "admin" | "manager" | "staff" | string;
+  role: "admin" | "waiter" | "manager" | "staff" | string;
 }
 
 export interface AuthState {
