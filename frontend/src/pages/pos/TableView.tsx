@@ -5,12 +5,18 @@ import { POSLayout } from "@/layouts/POSLayout";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Utensils, CreditCard, Clock, CheckCircle2, LayoutTemplate } from "lucide-react";
+import {
+  Users, Utensils, CreditCard, Clock, CheckCircle2,
+  LayoutTemplate, PowerOff, Power,
+} from "lucide-react";
+import { toast } from "sonner";
+
+type TableRow = { id: string; number: string; seats: number; active: boolean };
 
 type FloorData = {
   id: string;
   name: string;
-  tables: Array<{ id: string; number: string; seats: number; active: boolean }>;
+  tables: TableRow[];
 };
 
 export const TableView: React.FC = () => {
@@ -18,18 +24,51 @@ export const TableView: React.FC = () => {
   const [floors, setFloors] = useState<FloorData[]>([]);
   const [activeFloorId, setActiveFloorId] = useState<string>("");
 
-  useEffect(() => {
+  const loadFloors = () => {
     const savedFloors = localStorage.getItem("poscafe_floors");
     if (savedFloors) {
       try {
         const parsed: FloorData[] = JSON.parse(savedFloors);
         setFloors(parsed);
-        if (parsed.length > 0) setActiveFloorId(parsed[0].id);
+        if (parsed.length > 0 && !activeFloorId) setActiveFloorId(parsed[0].id);
       } catch (e) {
         console.error("Failed to parse floors in TableView", e);
       }
     }
+  };
+
+  useEffect(() => {
+    loadFloors();
   }, []);
+
+  // Toggle a table's active/inactive status and persist to localStorage
+  const toggleTableStatus = (
+    e: React.MouseEvent,
+    floorId: string,
+    tableId: string,
+    currentActive: boolean
+  ) => {
+    e.preventDefault(); // prevent Link navigation
+    e.stopPropagation();
+
+    const updated = floors.map(floor => {
+      if (floor.id !== floorId) return floor;
+      return {
+        ...floor,
+        tables: floor.tables.map(t =>
+          t.id === tableId ? { ...t, active: !t.active } : t
+        ),
+      };
+    });
+    setFloors(updated);
+    localStorage.setItem("poscafe_floors", JSON.stringify(updated));
+    toast.success(
+      currentActive
+        ? `Table marked as inactive`
+        : `Table marked as active`,
+      { description: "Status updated successfully." }
+    );
+  };
 
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -56,7 +95,9 @@ export const TableView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">Table Management</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Select a table to manage orders or payments.</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Select a table to manage orders. Long-press the power icon to toggle active status.
+            </p>
           </div>
 
           {/* Status Legend */}
@@ -73,7 +114,7 @@ export const TableView: React.FC = () => {
           </div>
         </div>
 
-        {/* Empty state — no floors at all */}
+        {/* Empty state */}
         {floors.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-20 bg-card rounded-2xl border border-dashed border-border text-center">
             <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-5 text-primary">
@@ -85,7 +126,6 @@ export const TableView: React.FC = () => {
             </p>
           </div>
         ) : (
-          /* Floor Tabs */
           <Tabs value={activeFloorId} onValueChange={setActiveFloorId} className="w-full">
             {/* Tab strip */}
             <div className="bg-card rounded-t-xl border border-border px-4 pt-4 pb-0 shadow-sm">
@@ -97,47 +137,56 @@ export const TableView: React.FC = () => {
                     className="data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm px-6 font-semibold whitespace-nowrap"
                   >
                     {floor.name}
-                    <span className="ml-2 text-[10px] font-bold opacity-50">{floor.tables.filter(t => t.active).length}</span>
+                    <span className="ml-2 text-[10px] font-bold opacity-50">
+                      {floor.tables.filter(t => t.active).length}
+                    </span>
                   </TabsTrigger>
                 ))}
               </TabsList>
             </div>
 
-            {/* Tab content panels */}
+            {/* Tab content */}
             {floors.map(floor => (
               <TabsContent
                 key={floor.id}
                 value={floor.id}
                 className="border border-t-0 border-border rounded-b-xl bg-muted/10 p-5 sm:p-6 mt-0 outline-none min-h-[300px]"
               >
-                {floor.tables.filter(t => t.active).length === 0 ? (
+                {floor.tables.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <div className="w-12 h-12 rounded-full bg-card border flex items-center justify-center mb-3">
                       <LayoutTemplate className="w-5 h-5 text-muted-foreground/60" />
                     </div>
-                    <p className="font-medium text-muted-foreground text-sm">No active tables on this floor.</p>
+                    <p className="font-medium text-muted-foreground text-sm">No tables on this floor.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {floor.tables
-                      .filter(t => t.active)
-                      .map(table => {
-                        const status = getTableStatus(table.id);
-                        const config = getStatusConfig(status);
-                        const order = getTableOrder(table.id);
-                        const Icon = config.icon;
+                    {floor.tables.map(table => {
+                      const status = table.active ? getTableStatus(table.id) : "inactive";
+                      const config = table.active
+                        ? getStatusConfig(status)
+                        : { label: "Inactive", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground", icon: Users };
+                      const order = table.active ? getTableOrder(table.id) : undefined;
+                      const Icon = config.icon;
 
-                        return (
-                          <Link key={table.id} to={`/pos/order/${table.id}`} className="group transition-all active:scale-95">
-                            <Card className={`h-full rounded-2xl border-2 transition-all group-hover:shadow-lg ${
-                              status === "available" ? "border-emerald-100 hover:border-emerald-300" :
-                              status === "ready" ? "border-indigo-200 hover:border-indigo-400 animate-pulse bg-indigo-50/10" :
-                              status === "waiting" ? "border-amber-200 hover:border-amber-400" :
-                              status === "payment_pending" ? "border-blue-200 hover:border-blue-400" :
-                              "border-red-100 hover:border-red-300"
+                      return (
+                        <div key={table.id} className="relative group/card">
+                          <Link
+                            to={table.active ? `/pos/order/${table.id}` : "#"}
+                            onClick={e => { if (!table.active) e.preventDefault(); }}
+                            className={`block transition-all active:scale-95 ${!table.active ? "pointer-events-none" : ""}`}
+                          >
+                            <Card className={`h-full rounded-2xl border-2 transition-all ${
+                              !table.active
+                                ? "border-border opacity-50 grayscale"
+                                : status === "available" ? "border-emerald-100 hover:border-emerald-300 group-hover/card:shadow-lg"
+                                : status === "ready" ? "border-indigo-200 hover:border-indigo-400 animate-pulse bg-indigo-50/10"
+                                : status === "waiting" ? "border-amber-200 hover:border-amber-400 group-hover/card:shadow-lg"
+                                : status === "payment_pending" ? "border-blue-200 hover:border-blue-400 group-hover/card:shadow-lg"
+                                : "border-red-100 hover:border-red-300 group-hover/card:shadow-lg"
                             }`}>
                               <CardContent className="p-5 flex flex-col items-center justify-center text-center">
-                                <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-3 transition-all group-hover:scale-110 ${config.color}`}>
+                                <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-3 transition-all ${config.color}`}>
                                   <Icon size={26} strokeWidth={2} />
                                 </div>
                                 <h3 className="text-xl font-bold tracking-tight text-foreground mb-0.5">{table.number}</h3>
@@ -164,8 +213,22 @@ export const TableView: React.FC = () => {
                               )}
                             </Card>
                           </Link>
-                        );
-                      })}
+
+                          {/* Toggle button — appears on hover in top-right corner */}
+                          <button
+                            onClick={e => toggleTableStatus(e, floor.id, table.id, table.active)}
+                            title={table.active ? "Mark table as inactive" : "Mark table as active"}
+                            className={`absolute top-2 right-2 z-10 w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover/card:opacity-100 shadow-sm border ${
+                              table.active
+                                ? "bg-red-50 text-red-500 border-red-200 hover:bg-red-100"
+                                : "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
+                            }`}
+                          >
+                            {table.active ? <PowerOff size={13} strokeWidth={2.5} /> : <Power size={13} strokeWidth={2.5} />}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>

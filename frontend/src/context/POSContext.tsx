@@ -2,11 +2,17 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
+export type SelectedTopping = { name: string; price: number };
+
 export type OrderItem = {
   id: string;
+  /** Unique key so same item with different variant = different cart row */
+  cartKey: string;
   name: string;
-  price: number;
+  price: number; // final price including variant + toppings
   quantity: number;
+  selectedVariant?: { name: string; priceOption: number };
+  selectedToppings?: SelectedTopping[];
 };
 
 export type OrderStatus = "placed" | "preparing" | "ready" | "served";
