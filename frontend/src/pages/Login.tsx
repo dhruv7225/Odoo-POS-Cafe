@@ -3,12 +3,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AuthLayout } from "@/layouts/AuthLayout";
+import { useAuth } from "@/context/AuthContext";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -21,6 +22,8 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const {
     register,
@@ -35,13 +38,15 @@ export const LoginPage: React.FC = () => {
     },
   });
 
-  const onSubmit = async (data: LoginFormValues) => {
+  const onSubmit = async () => {
     setIsLoading(true);
-    // Simulate API call
-    console.log("Login data:", data);
+    // Simulate API call processing
     setTimeout(() => {
+      // For this mock, we default all logins to admin
+      login("admin");
       setIsLoading(false);
-    }, 1500);
+      navigate("/admin/dashboard");
+    }, 1200);
   };
 
   const rememberMeValue = watch("rememberMe");
