@@ -1,4 +1,4 @@
-# POSCafe Project Context & Guidelines
+# POSCafe Project Context & Agent Guidelines
 
 ## Website Overview
 - **Name**: POSCafe
@@ -12,26 +12,46 @@
 - Tailwind CSS v4 (`@tailwindcss/vite`)
 - `shadcn/ui` components (radix-ui)
 - `lucide-react` for icons
+- `recharts` for data visualization 
 - `react-hook-form` + `zod` for forms and validation
 - `react-router-dom` for client-side routing
+- `sonner` for toast notifications
 
 ## Design System Guidelines
-- **Theme**: Light theme. Soft backgrounds (`#FAFAFA` or light beige).
+- **Theme**: Light theme. Soft backgrounds (`#FAFAFA` or light beige). Active UI layers placed into standard white `bg-card` configurations.
 - **Primary Color**: Orange Accent (`#FF6B35`). Used for primary CTAs and highlights.
-- **Typography**: `Inter` / `Poppins` or modern equivalents (currently Geist/Inter).
+- **Typography**: `Inter` font stack.
 - **Border Radius**: Soft rounded corners (`12px` - `16px`).
-- **Effects**: Soft shadows for a modern card feel. Clean spacing and alignment. Smooth hover effects and minimal fade-in animations on load.
+- **Effects**: Soft shadows for a modern card feel. Clean spacing, alignment, and subtle CSS transitions. 
 
-## Core Features (Authentication Module)
-- **Layout**: Split-screen layout vertically centered. Left side (40%) contains branding (POSCafe), tagline ("Smart Restaurant Management & POS System"), soft gradient background, and illustration. Right side (60%) contains the auth form card. Stacked sequentially on mobile.
-- **Login Page**:
-  - Email & Password fields.
-  - "Remember me" checkout.
-  - "Forgot Password?" link.
-  - Social login options (Google placeholder).
-  - Footer directing to Signup.
-- **Signup Page**:
-  - Full Name, Email, Password, Confirm Password.
-  - Organization Name.
-  - Role Selection (Admin, Manager, Staff).
-- **UX Rules**: Clear error states (red borders/messages), highlight borders on input focus, password visibility toggles, loading state on submit buttons.
+## Core Architectures Built 
+
+### 1. Mock Authentication & Access Control
+- Simulated backend JWT and session behavior entirely via browser `localStorage`.
+- Handled locally inside `src/context/AuthContext.tsx` via standard React Context patterns interacting with `src/lib/auth.ts`.
+- Implemented `ProtectedRoute.tsx` logic which heavily scrutinizes the `.role === "admin"` property, routing unauthorized traffic safely away to an interactive feedback page or back to Login. 
+- Integrated Authentication pages (Login/Signup) following a 60/40 Split Screen UI holding a branded placeholder on the left and `zod` verified forms on the right.
+
+### 2. Administrator Layout (`AdminLayout.tsx`)
+- The main wrapper housing all authenticated flows utilizing a robust responsive architecture.
+- **Sidebar**: Dynamic collapsible logic holding active Lucide-React routing paths.
+- **Topbar**: Houses generic platform controls including Search fields, Notifications, and the globally aware Avatar matching the `AuthContext` user footprint.
+
+### 3. POS Admin Dashboard (`/admin/dashboard`)
+- Extensively customized to match premium exact-design criteria utilizing `Recharts`.
+- Features KPI Widgets evaluating global Total Returns.
+- Incorporates dynamic visual components:
+  - Dual-Axis line charts charting `Income` vs `Expense`.
+  - Nested transparent-centered Donut charts measuring `Top Categories`.
+  - Icon-driven list metrics tracking `Order Types` (Dine-in vs Online).
+  - Image block-card renderers showcasing the top `Trending Menus`.
+
+### 4. Menu Management Feature (`/admin/menu`)
+- Smart controller page `MenuManagement.tsx` encapsulating the POS item payload.
+- Contains nested specialized components:
+  - `AddMenuForm.tsx`: A complex state block handling multi-level variant creation flows, Dropdown Selectors, Pricing grids, and an intuitive **Drag-and-Drop Image Uploader** converting local `File` objects directly into Base64 blob visualizations utilizing the `FileReader API`.
+  - `MenuTable.tsx`: A robust `shadcn` interactive table listing out the data arrays mapping statuses (`Available` vs `Out of Stock`) and controlling delete actions seamlessly.
+  - Both layers rely on `localStorage` interactions mimicking persistent backend POST / DELETE routes successfully.
+
+## Rule For Future Agents
+- This application relies on `"strict": true` and `noUnusedLocals: true` inside of the `tsconfig`. **Any unused variables, imports or loose typing** will crash the `Vite` compiler outright. Please write perfectly clean TS React code.
