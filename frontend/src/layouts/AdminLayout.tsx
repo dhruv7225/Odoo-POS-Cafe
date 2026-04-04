@@ -11,7 +11,8 @@ import {
   Menu, 
   Coffee,
   PieChart,
-  Utensils
+  Utensils,
+  Layers
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ interface AdminLayoutProps {
 const navItems = [
   { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { name: "Menu", href: "/admin/menu", icon: Utensils },
+  { name: "Floors", href: "/admin/floors", icon: Layers },
   { name: "Orders", href: "/admin/orders", icon: ShoppingBag },
   { name: "Customers", href: "/admin/customers", icon: Users },
   { name: "Analytics", href: "/admin/analytics", icon: PieChart },
