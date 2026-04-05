@@ -10,12 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AuthLayout } from "@/layouts/AuthLayout";
 import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
   rememberMe: z.boolean().optional(),
-  role: z.enum(["admin", "waiter", "kitchen"]),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -29,35 +29,38 @@ export const LoginPage: React.FC = () => {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       rememberMe: false,
-      role: "admin",
     },
   });
 
   const onSubmit = async (values: LoginFormValues) => {
     setIsLoading(true);
-    // Simulate API call processing
-    setTimeout(() => {
-      login(values.role);
-      setIsLoading(false);
-      
-      if (values.role === "admin") {
+    try {
+      await login(values.email, values.password);
+      // Role is determined by backend, navigate accordingly
+      const auth = JSON.parse(localStorage.getItem("auth") || "{}");
+      const role = auth?.user?.role;
+
+      if (role === "admin") {
         navigate("/admin/dashboard");
-      } else if (values.role === "kitchen") {
+      } else if (role === "kitchen") {
         navigate("/kitchen");
+      } else if (role === "cashier") {
+        navigate("/cashier");
       } else {
         navigate("/pos");
       }
-    }, 1200);
+      toast.success("Welcome back!");
+    } catch (err: any) {
+      toast.error(err.message || "Login failed. Check your credentials.");
+    } finally {
+      setIsLoading(false);
+    }
   };
-
-  const rememberMeValue = watch("rememberMe");
 
   return (
     <AuthLayout>
@@ -117,41 +120,10 @@ export const LoginPage: React.FC = () => {
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label>Login As</Label>
-            <div className="grid grid-cols-3 gap-3">
-              <Button 
-                type="button" 
-                variant={watch("role") === "admin" ? "default" : "outline"}
-                className="h-10 text-xs px-2"
-                onClick={() => setValue("role", "admin")}
-              >
-                Admin
-              </Button>
-              <Button 
-                type="button" 
-                variant={watch("role") === "waiter" ? "default" : "outline"}
-                className="h-10 text-xs px-2"
-                onClick={() => setValue("role", "waiter")}
-              >
-                Waiter
-              </Button>
-              <Button 
-                type="button" 
-                variant={watch("role") === "kitchen" ? "default" : "outline"}
-                className="h-10 text-xs px-2"
-                onClick={() => setValue("role", "kitchen")}
-              >
-                Kitchen
-              </Button>
-            </div>
-          </div>
-
           <div className="flex items-center space-x-2">
             <Checkbox
               id="rememberMe"
-              checked={rememberMeValue}
-              onCheckedChange={(checked) => setValue("rememberMe", checked as boolean)}
+              {...register("rememberMe")}
             />
             <Label htmlFor="rememberMe" className="text-sm font-normal cursor-pointer">
               Remember me for 30 days
@@ -169,21 +141,13 @@ export const LoginPage: React.FC = () => {
             )}
           </Button>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
-            </div>
+          {/* Quick login hints */}
+          <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Test Accounts (password: Test@1234)</p>
+            <p>Admin: admin@poscafe.com | Manager: manager@poscafe.com</p>
+            <p>Cashier: cashier@poscafe.com | Waiter: waiter@poscafe.com</p>
+            <p>Chef: chef@poscafe.com</p>
           </div>
-
-          <Button type="button" variant="outline" className="w-full h-11 bg-background" disabled={isLoading}>
-            <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
-              <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
-            </svg>
-            Google
-          </Button>
         </form>
 
         <div className="mt-8 text-center text-sm text-muted-foreground">
