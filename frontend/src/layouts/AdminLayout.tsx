@@ -2,9 +2,8 @@ import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, 
-  ShoppingBag, 
-  Users, 
-  Settings, 
+  ShoppingBag,
+  Settings,
   LogOut, 
   Bell, 
   Search, 
@@ -26,7 +25,6 @@ const navItems = [
   { name: "Menu", href: "/admin/menu", icon: Utensils },
   { name: "Floors", href: "/admin/floors", icon: Layers },
   { name: "Orders", href: "/admin/orders", icon: ShoppingBag },
-  { name: "Customers", href: "/admin/customers", icon: Users },
   { name: "Analytics", href: "/admin/analytics", icon: PieChart },
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
