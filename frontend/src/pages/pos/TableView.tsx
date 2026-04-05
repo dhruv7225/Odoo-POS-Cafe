@@ -10,64 +10,33 @@ import {
   LayoutTemplate, PowerOff, Power,
 } from "lucide-react";
 import { toast } from "sonner";
-
-type TableRow = { id: string; number: string; seats: number; active: boolean };
-
-type FloorData = {
-  id: string;
-  name: string;
-  tables: TableRow[];
-};
+import { tableApi } from "@/lib/api";
 
 export const TableView: React.FC = () => {
-  const { getTableStatus, getTableOrder } = usePOS();
-  const [floors, setFloors] = useState<FloorData[]>([]);
+  const { floors, getTableStatus, getTableOrder, refreshTables } = usePOS();
   const [activeFloorId, setActiveFloorId] = useState<string>("");
 
-  const loadFloors = () => {
-    const savedFloors = localStorage.getItem("poscafe_floors");
-    if (savedFloors) {
-      try {
-        const parsed: FloorData[] = JSON.parse(savedFloors);
-        setFloors(parsed);
-        if (parsed.length > 0 && !activeFloorId) setActiveFloorId(parsed[0].id);
-      } catch (e) {
-        console.error("Failed to parse floors in TableView", e);
-      }
-    }
-  };
-
   useEffect(() => {
-    loadFloors();
-  }, []);
+    if (floors.length > 0 && !activeFloorId) setActiveFloorId(floors[0].id);
+  }, [floors]);
 
-  // Toggle a table's active/inactive status and persist to localStorage
-  const toggleTableStatus = (
+  const toggleTableStatus = async (
     e: React.MouseEvent,
-    floorId: string,
+    _floorId: string,
     tableId: string,
     currentActive: boolean
   ) => {
-    e.preventDefault(); // prevent Link navigation
+    e.preventDefault();
     e.stopPropagation();
-
-    const updated = floors.map(floor => {
-      if (floor.id !== floorId) return floor;
-      return {
-        ...floor,
-        tables: floor.tables.map(t =>
-          t.id === tableId ? { ...t, active: !t.active } : t
-        ),
-      };
-    });
-    setFloors(updated);
-    localStorage.setItem("poscafe_floors", JSON.stringify(updated));
-    toast.success(
-      currentActive
-        ? `Table marked as inactive`
-        : `Table marked as active`,
-      { description: "Status updated successfully." }
-    );
+    const table = floors.flatMap((f) => f.tables).find((t) => t.id === tableId);
+    if (!table) return;
+    try {
+      await tableApi.toggle(table.backendId);
+      toast.success(currentActive ? "Table marked as inactive" : "Table marked as active");
+      refreshTables();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const getStatusConfig = (status: string) => {
@@ -207,7 +176,7 @@ export const TableView: React.FC = () => {
                                   <div className="h-px w-full bg-border mb-3" />
                                   <div className="flex justify-between items-center bg-muted/30 px-3 py-2 rounded-lg">
                                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Total</span>
-                                    <span className="text-sm font-bold text-foreground">${order.total.toFixed(2)}</span>
+                                    <span className="text-sm font-bold text-foreground">₹{order.total.toFixed(2)}</span>
                                   </div>
                                 </div>
                               )}
