@@ -1,183 +1,365 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
+import { useAuth } from "./AuthContext";
+import { floorApi, tableApi, orderApi } from "@/lib/api";
+import type { OrderCreatePayload } from "@/lib/api";
+import { connectWebSocket, subscribe } from "@/lib/websocket";
 
 export type SelectedTopping = { name: string; price: number };
 
 export type OrderItem = {
   id: string;
-  /** Unique key so same item with different variant = different cart row */
   cartKey: string;
   name: string;
-  price: number; // final price including variant + toppings
+  price: number;
   quantity: number;
-  selectedVariant?: { name: string; priceOption: number };
-  selectedToppings?: SelectedTopping[];
+  selectedVariant?: { id?: number; name: string; priceOption: number };
+  selectedToppings?: (SelectedTopping & { id?: number })[];
+  productId: number;
 };
 
 export type OrderStatus = "placed" | "preparing" | "ready" | "served";
-export type TableStatus = "available" | "occupied" | "waiting" | "ready" | "payment_pending";
+export type TableStatus = "available" | "occupied" | "waiting" | "ready" | "payment_pending" | "inactive";
+
+export type BackendOrder = {
+  id: number;
+  orderNo: string;
+  restaurantId: number;
+  tableId: number | null;
+  tableNo: string | null;
+  floorName: string | null;
+  posSessionId: number | null;
+  sourceType: string;
+  status: string;           // DRAFT, CONFIRMED, IN_KITCHEN, READY, COMPLETED, CANCELLED
+  confirmationStatus: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  waiterName: string | null;
+  cashierName: string | null;
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  paymentStatus: string;    // UNPAID, PARTIAL, PAID
+  createdAt: string;
+  items: BackendOrderItem[];
+};
+
+export type BackendOrderItem = {
+  id: number;
+  productId: number;
+  productName: string;
+  variantName: string | null;
+  selectedToppings: string | null;
+  qty: number;
+  unitPrice: number;
+  toppingsPrice: number;
+  taxAmount: number;
+  lineTotal: number;
+  itemStatus: string;
+  notes: string | null;
+};
 
 export type Order = {
   id: string;
+  backendId: number;
+  restaurantId: number;
+  orderNo: string;
   tableId: string;
   items: OrderItem[];
   status: OrderStatus;
+  backendStatus: string;
+  confirmationStatus: string;
   total: number;
   paymentStatus: "pending" | "paid";
   createdAt: number;
+  tableNo?: string;
+  floorName?: string;
 };
 
 export type Table = {
   id: string;
+  backendId: number;
   number: string;
   seats: number;
   floorId: string;
+  backendStatus: string;
+  active: boolean;
+};
+
+export type Floor = {
+  id: string;
+  backendId: number;
+  name: string;
+  tables: Table[];
 };
 
 interface POSContextType {
   tables: Table[];
+  floors: Floor[];
   orders: Order[];
+  loading: boolean;
+  refreshOrders: () => Promise<void>;
+  refreshTables: () => Promise<void>;
   getPendingOrders: () => Order[];
   getReadyOrders: () => Order[];
   getTableOrder: (tableId: string) => Order | undefined;
   getTableStatus: (tableId: string) => TableStatus;
-  placeOrder: (tableId: string, items: OrderItem[]) => void;
+  placeOrder: (tableId: string, items: OrderItem[]) => Promise<void>;
+  confirmOrder: (orderId: string) => Promise<void>;
+  sendToKitchen: (orderId: string) => Promise<void>;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
-  markAsServed: (orderId: string) => void;
+  markAsServed: (orderId: string) => Promise<void>;
   processPayment: (orderId: string) => void;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
-export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [tables, setTables] = useState<Table[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+/** Map backend order status to frontend OrderStatus */
+function mapStatus(backendStatus: string): OrderStatus {
+  switch (backendStatus) {
+    case "DRAFT": return "placed";
+    case "CONFIRMED": return "placed";
+    case "IN_KITCHEN": return "preparing";
+    case "READY": return "ready";
+    case "COMPLETED": return "served";
+    default: return "placed";
+  }
+}
 
-  // Load tables from admin localStorage
-  useEffect(() => {
-    const savedFloors = localStorage.getItem("poscafe_floors");
-    if (savedFloors) {
-      try {
-        const floors = JSON.parse(savedFloors);
-        const allTables = floors.flatMap((f: any) => 
-          f.tables.map((t: any) => ({ ...t, floorId: f.id }))
-        );
-        setTables(allTables);
-      } catch (e) {
-        console.error("Failed to parse tables in POS", e);
-      }
-    }
-
-    const savedOrders = localStorage.getItem("poscafe_pos_orders");
-    if (savedOrders) {
-      try {
-        setOrders(JSON.parse(savedOrders));
-      } catch (e) {
-        console.error("Failed to parse orders in POS", e);
-      }
-    }
-  }, []);
-
-  // Save orders to localStorage
-  useEffect(() => {
-    if (orders.length > 0) {
-      localStorage.setItem("poscafe_pos_orders", JSON.stringify(orders));
-    }
-  }, [orders]);
-
-  // Kitchen Simulation logic
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setOrders(currentOrders => {
-        let changed = false;
-        const mapped = currentOrders.map(order => {
-          // If placed -> preparing (simulated after 10s)
-          if (order.status === "placed" && Date.now() - order.createdAt > 10000) {
-            changed = true;
-            toast.info(`Table ${getTableNumber(order.tableId)}: Food is being prepared.`);
-            return { ...order, status: "preparing" as OrderStatus };
-          }
-          // If preparing -> ready (simulated after 30s)
-          if (order.status === "preparing" && Date.now() - order.createdAt > 30000) {
-            changed = true;
-            toast.success(`Table ${getTableNumber(order.tableId)}: Order is READY!`, {
-              description: "Proceed to pick up from kitchen.",
-              duration: 5000,
-            });
-            return { ...order, status: "ready" as OrderStatus };
-          }
-          return order;
-        });
-        return changed ? mapped : currentOrders;
-      });
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [tables]);
-
-  const getTableNumber = (tableId: string) => {
-    return tables.find(t => t.id === tableId)?.number || "??";
+function mapOrder(o: BackendOrder): Order {
+  return {
+    id: `ord-${o.id}`,
+    backendId: o.id,
+    restaurantId: o.restaurantId,
+    orderNo: o.orderNo,
+    tableId: `table-${o.tableId}`,
+    tableNo: o.tableNo ?? undefined,
+    floorName: o.floorName ?? undefined,
+    items: o.items.map((item) => ({
+      id: `item-${item.id}`,
+      cartKey: `${item.productId}-${item.variantName || "base"}-${item.selectedToppings || "none"}`,
+      name: item.productName,
+      price: item.lineTotal / item.qty,
+      quantity: item.qty,
+      productId: item.productId,
+      selectedVariant: item.variantName ? { name: item.variantName, priceOption: 0 } : undefined,
+      selectedToppings: item.selectedToppings
+        ? item.selectedToppings.split(", ").map((n) => ({ name: n, price: 0 }))
+        : undefined,
+    })),
+    status: mapStatus(o.status),
+    backendStatus: o.status,
+    confirmationStatus: o.confirmationStatus,
+    total: o.totalAmount,
+    paymentStatus: o.paymentStatus === "PAID" ? "paid" : "pending",
+    createdAt: new Date(o.createdAt).getTime(),
   };
+}
+
+export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { restaurantId } = useAuth();
+  const [tables, setTables] = useState<Table[]>([]);
+  const [floors, setFloors] = useState<Floor[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refreshTables = useCallback(async () => {
+    if (!restaurantId) return;
+    try {
+      const floorData = await floorApi.list(restaurantId);
+      const allFloors: Floor[] = [];
+      const allTables: Table[] = [];
+
+      for (const f of floorData) {
+        const tblData = await tableApi.listByFloor(f.id);
+        const mappedTables: Table[] = tblData.map((t: any) => ({
+          id: `table-${t.id}`,
+          backendId: t.id,
+          number: t.tableNo,
+          seats: t.seats,
+          floorId: `floor-${f.id}`,
+          backendStatus: t.status,
+          active: t.active,
+        }));
+        allFloors.push({
+          id: `floor-${f.id}`,
+          backendId: f.id,
+          name: f.name,
+          tables: mappedTables,
+        });
+        allTables.push(...mappedTables);
+      }
+      setFloors(allFloors);
+      setTables(allTables);
+    } catch (err) {
+      console.error("Failed to load tables:", err);
+    }
+  }, [restaurantId]);
+
+  const refreshOrders = useCallback(async () => {
+    if (!restaurantId) return;
+    try {
+      const data = await orderApi.listByRestaurant(restaurantId);
+      setOrders(data.filter((o: any) => o.status !== "CANCELLED").map(mapOrder));
+    } catch (err) {
+      console.error("Failed to load orders:", err);
+    }
+  }, [restaurantId]);
+
+  // Initial load
+  useEffect(() => {
+    if (!restaurantId) { setLoading(false); return; }
+    setLoading(true);
+    Promise.all([refreshTables(), refreshOrders()]).finally(() => setLoading(false));
+  }, [restaurantId, refreshTables, refreshOrders]);
+
+  // Poll orders every 10 seconds as fallback
+  useEffect(() => {
+    if (!restaurantId) return;
+    const interval = setInterval(refreshOrders, 10000);
+    return () => clearInterval(interval);
+  }, [restaurantId, refreshOrders]);
+
+  // WebSocket subscriptions
+  useEffect(() => {
+    if (!restaurantId) return;
+    connectWebSocket().catch(() => console.warn("WebSocket connection failed, using polling"));
+
+    const unsubs = [
+      subscribe(`/topic/orders/${restaurantId}/new-order`, (order: any) => {
+        toast.info(`New order from Table ${order.tableNo || "?"}`);
+        refreshOrders();
+      }),
+      subscribe(`/topic/kitchen/${restaurantId}/order-ready`, (data: any) => {
+        toast.success(`Order ${data.orderNo} is READY!`, { description: "Pick up from kitchen.", duration: 5000 });
+        refreshOrders();
+      }),
+      subscribe(`/topic/kitchen/${restaurantId}/ticket-update`, () => {
+        refreshOrders();
+      }),
+      subscribe(`/topic/kitchen/${restaurantId}/new-ticket`, () => {
+        refreshOrders();
+      }),
+    ];
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [restaurantId, refreshOrders]);
 
   const getTableOrder = (tableId: string) => {
-    return orders.find(o => o.tableId === tableId && o.paymentStatus === "pending");
+    return orders.find((o) => o.tableId === tableId && o.paymentStatus === "pending" && o.backendStatus !== "CANCELLED");
   };
 
   const getTableStatus = (tableId: string): TableStatus => {
+    const table = tables.find((t) => t.id === tableId);
+    if (table && !table.active) return "inactive";
+
     const order = getTableOrder(tableId);
     if (!order) return "available";
-    if (order.status === "placed" || order.status === "preparing") return "waiting";
-    if (order.status === "ready") return "ready";
-    if (order.status === "served" && order.paymentStatus === "pending") return "payment_pending";
+    if (order.backendStatus === "DRAFT") return "waiting";
+    if (order.backendStatus === "CONFIRMED") return "waiting";
+    if (order.backendStatus === "IN_KITCHEN") return "waiting";
+    if (order.backendStatus === "READY") return "ready";
+    if (order.backendStatus === "COMPLETED" && order.paymentStatus === "pending") return "payment_pending";
     return "occupied";
   };
 
-  const placeOrder = (tableId: string, items: OrderItem[]) => {
-    const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const newOrder: Order = {
-      id: `ord-${Date.now()}`,
-      tableId,
-      items,
-      status: "placed",
-      total,
-      paymentStatus: "pending",
-      createdAt: Date.now(),
+  const placeOrder = async (tableId: string, items: OrderItem[]) => {
+    if (!restaurantId) throw new Error("No restaurant selected");
+    const table = tables.find((t) => t.id === tableId);
+    if (!table) throw new Error("Table not found");
+
+    const payload: OrderCreatePayload = {
+      restaurantId,
+      tableId: table.backendId,
+      items: items.map((item) => ({
+        productId: item.productId,
+        variantId: item.selectedVariant?.id,
+        toppingIds: item.selectedToppings?.filter((t) => t.id).map((t) => t.id!) as number[] | undefined,
+        qty: item.quantity,
+        notes: undefined,
+      })),
     };
-    setOrders([...orders, newOrder]);
+
+    // Step 1: Create order (DRAFT/PENDING)
+    const created: any = await orderApi.create(payload);
+    const newOrderId = created.id;
+
+    // Step 2: Waiter confirms the order
+    await orderApi.confirm(newOrderId);
+
+    // Step 3: Send to kitchen (creates kitchen ticket + WebSocket notification to chef)
+    await orderApi.sendToKitchen(newOrderId);
+
     toast.success("Order sent to kitchen!");
+    await refreshOrders();
+  };
+
+  const confirmOrder = async (orderId: string) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+    await orderApi.confirm(order.backendId);
+    toast.success("Order confirmed");
+    await refreshOrders();
+  };
+
+  const sendToKitchen = async (orderId: string) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+    await orderApi.sendToKitchen(order.backendId);
+    toast.success("Order sent to kitchen!");
+    await refreshOrders();
   };
 
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
   };
 
-  const markAsServed = (orderId: string) => {
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status: "served" as OrderStatus } : o));
-    toast.success("Order served to table.");
+  const markAsServed = async (orderId: string) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+    try {
+      await orderApi.requestPayment(order.backendId);
+      toast.success("Payment requested — cashier notified. Table released.");
+      await refreshOrders();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to request payment");
+    }
   };
 
-  const processPayment = (orderId: string) => {
-    setOrders(orders.map(o => o.id === orderId ? { ...o, paymentStatus: "paid" as const } : o));
-    toast.success("Payment successful. Table is now available.");
+  const processPayment = (_orderId: string) => {
+    // Payment happens through cashier dashboard, not here
+    toast.info("Please proceed to cashier for payment.");
   };
 
-  const getReadyOrders = () => orders.filter(o => o.status === "ready");
-  const getPendingOrders = () => orders.filter(o => o.paymentStatus === "pending");
+  const getReadyOrders = () => orders.filter((o) => o.backendStatus === "READY");
+  const getPendingOrders = () => orders.filter((o) => o.paymentStatus === "pending");
 
   return (
-    <POSContext.Provider value={{ 
-      tables, 
-      orders, 
-      getPendingOrders, 
-      getReadyOrders, 
-      getTableOrder, 
-      getTableStatus,
-      placeOrder,
-      updateOrderStatus,
-      markAsServed,
-      processPayment
-    }}>
+    <POSContext.Provider
+      value={{
+        tables,
+        floors,
+        orders,
+        loading,
+        refreshOrders,
+        refreshTables,
+        getPendingOrders,
+        getReadyOrders,
+        getTableOrder,
+        getTableStatus,
+        placeOrder,
+        confirmOrder,
+        sendToKitchen,
+        updateOrderStatus,
+        markAsServed,
+        processPayment,
+      }}
+    >
       {children}
     </POSContext.Provider>
   );
