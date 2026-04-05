@@ -183,7 +183,10 @@ export const OrderScreen: React.FC = () => {
       + activeToppings.reduce((sum, t) => sum + Number(t.price), 0)
     : 0;
 
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cgst = subtotal * 0.025;
+  const sgst = subtotal * 0.025;
+  const total = subtotal + cgst + sgst;
 
   const handleSendToKitchen = async () => {
     if (cart.length === 0) return;
@@ -313,7 +316,9 @@ export const OrderScreen: React.FC = () => {
 
       <footer className="p-5 bg-muted/20 border-t border-border space-y-4 shrink-0">
         <div className="space-y-2">
-          <div className="flex justify-between text-sm text-muted-foreground font-medium"><span>Subtotal</span><span>₹{total.toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-muted-foreground font-medium"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between text-xs text-muted-foreground"><span>CGST (2.5%)</span><span>₹{cgst.toFixed(2)}</span></div>
+          <div className="flex justify-between text-xs text-muted-foreground"><span>SGST (2.5%)</span><span>₹{sgst.toFixed(2)}</span></div>
           <div className="h-px bg-border w-full" />
           <div className="flex justify-between text-foreground font-bold text-xl tracking-tight"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
         </div>

@@ -234,9 +234,11 @@ export function CustomerOrderStatus() {
     ? Number(customizationItem.price) + (activeVariant?.priceOption || 0) + activeToppings.reduce((s: number, t: any) => s + Number(t.price), 0)
     : 0;
 
-  const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const cgst = subtotal * 0.025;
+  const sgst = subtotal * 0.025;
+  const total = subtotal + cgst + sgst;
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
-
   // ─── Place order ───
   const handlePlaceOrder = async () => {
     if (!cart.length) return;
@@ -408,7 +410,9 @@ export function CustomerOrderStatus() {
       </ScrollArea>
       <footer className="p-5 bg-muted/20 border-t space-y-4 shrink-0">
         <div className="space-y-2">
-          <div className="flex justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>₹{total.toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between text-xs text-muted-foreground"><span>CGST (2.5%)</span><span>₹{cgst.toFixed(2)}</span></div>
+          <div className="flex justify-between text-xs text-muted-foreground"><span>SGST (2.5%)</span><span>₹{sgst.toFixed(2)}</span></div>
           <div className="h-px bg-border" />
           <div className="flex justify-between font-bold text-xl"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
         </div>
