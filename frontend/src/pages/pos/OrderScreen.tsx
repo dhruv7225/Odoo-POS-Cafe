@@ -17,20 +17,24 @@ import { toast } from "sonner";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter
 } from "@/components/ui/sheet";
+import { productApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 export const OrderScreen: React.FC = () => {
   const { tableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
-  const { tables, getTableOrder, placeOrder, processPayment } = usePOS();
+  const { tables, getTableOrder, placeOrder } = usePOS();
+  const { restaurantId } = useAuth();
 
   const [menu, setMenu] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [searchTerm, setSearchTerm] = useState("");
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
 
   // Customization state
   const [customizationItem, setCustomizationItem] = useState<any | null>(null);
-  const [activeVariant, setActiveVariant] = useState<any>(null); // defaults to base item if null
+  const [activeVariant, setActiveVariant] = useState<any>(null);
   const [activeToppings, setActiveToppings] = useState<any[]>([]);
 
   const [focusedCartKey, setFocusedCartKey] = useState<string | null>(null);
@@ -41,19 +45,37 @@ export const OrderScreen: React.FC = () => {
   const categories = ["All", ...new Set(menu.map(item => item.category))];
 
   useEffect(() => {
-    const savedMenu = localStorage.getItem("poscafe_menu");
-    if (savedMenu) {
-      try {
-        setMenu(JSON.parse(savedMenu));
-      } catch (e) {
-        console.error("Failed to parse menu items in POS", e);
-      }
+    // Load menu from API
+    if (restaurantId) {
+      productApi.list(restaurantId).then(async (products) => {
+        const menuItems = await Promise.all(products.map(async (p: any) => {
+          let variants: any[] = [];
+          let toppings: any[] = [];
+          try { variants = await productApi.getVariants(p.id); } catch {}
+          try { toppings = await productApi.getToppings(p.id); } catch {}
+          return {
+            id: String(p.id),
+            backendId: p.id,
+            name: p.name,
+            description: p.description || "",
+            category: p.category?.name || "Uncategorized",
+            price: p.price,
+            image: p.imageUrl || "",
+            imageUrl: p.imageUrl || "",
+            glbUrl: p.glbUrl || "",
+            variants: variants.map((v: any) => ({ id: v.id, name: v.name, priceOption: v.priceAdjustment })),
+            toppings: toppings.map((t: any) => ({ id: t.id, name: t.name, price: t.price, optional: true })),
+            available: p.active,
+            sendToKitchen: p.kitchenEnabled,
+          };
+        }));
+        setMenu(menuItems);
+      }).catch((err) => console.error("Failed to load menu", err));
     }
     if (existingOrder) {
-      // Safety backwards compat
       setCart(existingOrder.items.map(i => ({ ...i, cartKey: i.cartKey || i.id })));
     }
-  }, [existingOrder]);
+  }, [existingOrder, restaurantId]);
 
   useEffect(() => {
     if (focusedCartKey && cartItemRefs.current[focusedCartKey]) {
@@ -61,26 +83,21 @@ export const OrderScreen: React.FC = () => {
     }
   }, [focusedCartKey]);
 
-  const filteredItems = selectedCategory === "All"
-    ? menu
-    : menu.filter(item => item.category === selectedCategory);
+  const filteredItems = menu.filter(item => {
+    const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
+    const matchesSearch = !searchTerm || item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
 
-  // Clicking a card either adds instantly or opens customization
+  // Always open customization modal on click — waiter confirms before adding
   const requestAddToCart = (product: any) => {
     if (!product.available) {
       toast.error("Item is out of stock!");
       return;
     }
-    // If it has variants or toppings, open sheet
-    if ((product.variants && product.variants.length > 0) || (product.toppings && product.toppings.length > 0)) {
-      setCustomizationItem(product);
-      setActiveVariant(null);
-      setActiveToppings([]);
-      return;
-    }
-    
-    // Otherwise add directly
-    commitToCart(product.id, product.name, Number(product.price));
+    setCustomizationItem(product);
+    setActiveVariant(null);
+    setActiveToppings([]);
   };
 
   const commitToCart = (
@@ -106,14 +123,15 @@ export const OrderScreen: React.FC = () => {
         );
       }
 
-      return [...prev, { 
-        id: productId, 
+      return [...prev, {
+        id: productId,
         cartKey,
-        name, 
-        price, 
+        name,
+        price,
         quantity: 1,
-        selectedVariant: variant ? { name: variant.name, priceOption: variant.priceOption } : undefined,
-        selectedToppings: toppings && toppings.length > 0 ? toppings.map(t => ({ name: t.name, price: t.price })) : undefined
+        productId: Number(productId),
+        selectedVariant: variant ? { id: variant.id, name: variant.name, priceOption: variant.priceOption } : undefined,
+        selectedToppings: toppings && toppings.length > 0 ? toppings.map(t => ({ id: t.id, name: t.name, price: t.price })) : undefined
       }];
     });
 
@@ -167,15 +185,19 @@ export const OrderScreen: React.FC = () => {
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const handleSendToKitchen = () => {
+  const handleSendToKitchen = async () => {
     if (cart.length === 0) return;
-    placeOrder(tableId!, cart);
-    navigate("/pos");
+    try {
+      await placeOrder(tableId!, cart);
+      navigate("/pos");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to place order");
+    }
   };
 
   const handlePayment = () => {
     if (!existingOrder) return;
-    processPayment(existingOrder.id);
+    toast.info("Please proceed to cashier for payment.");
     navigate("/pos");
   };
 
@@ -244,7 +266,7 @@ export const OrderScreen: React.FC = () => {
                     )}
 
                     <p className="text-xs font-medium text-primary">
-                      ${item.price.toFixed(2)} × {item.quantity} = <span className="font-bold">${(item.price * item.quantity).toFixed(2)}</span>
+                      ₹{item.price.toFixed(2)} × {item.quantity} = <span className="font-bold">₹{(item.price * item.quantity).toFixed(2)}</span>
                     </p>
                   </div>
 
@@ -291,15 +313,39 @@ export const OrderScreen: React.FC = () => {
 
       <footer className="p-5 bg-muted/20 border-t border-border space-y-4 shrink-0">
         <div className="space-y-2">
-          <div className="flex justify-between text-sm text-muted-foreground font-medium"><span>Subtotal</span><span>${total.toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-muted-foreground font-medium"><span>Subtotal</span><span>₹{total.toFixed(2)}</span></div>
           <div className="h-px bg-border w-full" />
-          <div className="flex justify-between text-foreground font-bold text-xl tracking-tight"><span>Total</span><span>${total.toFixed(2)}</span></div>
+          <div className="flex justify-between text-foreground font-bold text-xl tracking-tight"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
           {!existingOrder || existingOrder.paymentStatus === "paid" ? (
             <Button className="col-span-2 h-14 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-base shadow-lg shadow-primary/20 active:scale-95 transition-all" disabled={cart.length === 0} onClick={handleSendToKitchen}>
               <CookingPot className="w-5 h-5 mr-2" /> Send to Kitchen
             </Button>
+          ) : existingOrder.confirmationStatus === "PENDING" ? (
+            <>
+              <Button className="h-14 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm shadow-lg active:scale-95 transition-all" onClick={async () => {
+                try {
+                  const { confirmOrder, sendToKitchen } = await import("@/lib/api").then(m => ({ confirmOrder: m.orderApi.confirm, sendToKitchen: m.orderApi.sendToKitchen }));
+                  await confirmOrder(existingOrder.backendId);
+                  await sendToKitchen(existingOrder.backendId);
+                  toast.success("Order confirmed & sent to kitchen!");
+                  navigate("/pos");
+                } catch (err: any) { toast.error(err.message); }
+              }}>
+                <CookingPot className="w-4 h-4 mr-1.5" /> Confirm & Send
+              </Button>
+              <Button variant="outline" className="h-14 rounded-xl border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600 font-bold text-sm active:scale-95 transition-all" onClick={async () => {
+                try {
+                  const { rejectOrder } = await import("@/lib/api").then(m => ({ rejectOrder: m.orderApi.reject }));
+                  await rejectOrder(existingOrder.backendId);
+                  toast.success("Order rejected.");
+                  navigate("/pos");
+                } catch (err: any) { toast.error(err.message); }
+              }}>
+                <X className="w-4 h-4 mr-1.5" /> Reject
+              </Button>
+            </>
           ) : (
             <>
               <Button variant="outline" className="h-14 rounded-xl bg-card border-border font-semibold text-sm text-primary hover:bg-primary/5 active:scale-95 transition-all" onClick={handleSendToKitchen}>Update Order</Button>
@@ -318,7 +364,7 @@ export const OrderScreen: React.FC = () => {
       <div className="flex h-full gap-0 overflow-hidden -m-4 sm:-m-6 lg:-m-8">
         
         {/* Left: Product Grid */}
-        <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-hidden p-4 sm:p-6 lg:p-8">
+        <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-hidden p-4 sm:p-6 lg:p-8 h-full">
           <header className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="icon" onClick={() => navigate("/pos")} className="rounded-xl border-border shadow-sm"><ChevronLeft size={20} /></Button>
@@ -334,7 +380,7 @@ export const OrderScreen: React.FC = () => {
               </Button>
               <div className="relative w-52 hidden lg:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input placeholder="Search menu..." className="pl-9 h-9 rounded-xl bg-card border-border" />
+                <Input placeholder="Search menu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 h-9 rounded-xl bg-card border-border" />
               </div>
             </div>
           </header>
@@ -347,7 +393,7 @@ export const OrderScreen: React.FC = () => {
             </div>
           </ScrollArea>
 
-          <ScrollArea className="flex-1 -mx-2 px-2">
+          <div className="flex-1 overflow-y-auto -mx-2 px-2">
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 pb-24 lg:pb-10">
               {filteredItems.map(item => {
                 const qtyInCart = cart.filter(c => c.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
@@ -361,8 +407,8 @@ export const OrderScreen: React.FC = () => {
                   >
                     <CardContent className="p-0">
                       <div className="aspect-[4/3] bg-muted relative overflow-hidden">
-                        {item.image ? (
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                        {item.image || item.imageUrl ? (
+                          <img src={item.imageUrl || item.image} alt={item.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-muted-foreground/30"><UtensilsCrossed size={44} /></div>
                         )}
@@ -372,7 +418,7 @@ export const OrderScreen: React.FC = () => {
                       <div className="p-3.5 space-y-1">
                         <h3 className="font-semibold text-sm text-foreground line-clamp-1">{item.name}</h3>
                         <div className="flex justify-between items-center">
-                          <span className="text-primary font-bold">${Number(item.price).toFixed(2)}</span>
+                          <span className="text-primary font-bold">₹{Number(item.price).toFixed(2)}</span>
                           <div className="bg-primary/10 text-primary w-7 h-7 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><Plus size={14} strokeWidth={2.5} /></div>
                         </div>
                       </div>
@@ -381,7 +427,7 @@ export const OrderScreen: React.FC = () => {
                 );
               })}
             </div>
-          </ScrollArea>
+          </div>
         </div>
 
         {/* Desktop Cart Sidebar */}
@@ -407,16 +453,28 @@ export const OrderScreen: React.FC = () => {
 
           <ScrollArea className="flex-1 p-6">
             <div className="space-y-8 pb-6">
-              
+
+              {/* Product Info */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-primary">₹{Number(customizationItem?.price || 0).toFixed(2)}</span>
+                  {customizationItem?.category && (
+                    <Badge variant="outline" className="text-xs font-semibold">{customizationItem.category}</Badge>
+                  )}
+                </div>
+                {customizationItem?.description && (
+                  <p className="text-sm text-muted-foreground">{customizationItem.description}</p>
+                )}
+              </div>
+
               {/* Variants Section */}
               {customizationItem?.variants?.length > 0 && (
                 <div className="space-y-3">
                   <Label className="text-base font-bold flex justify-between">
-                    <span>Size / Variant <span className="text-red-500">*</span></span>
+                    <span>Size / Variant</span>
                   </Label>
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Default Base Item */}
-                    <div 
+                    <div
                       onClick={() => setActiveVariant(null)}
                       className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
                         activeVariant === null ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40 bg-card"
@@ -425,9 +483,8 @@ export const OrderScreen: React.FC = () => {
                       <p className={`font-semibold text-sm ${activeVariant === null ? "text-primary" : "text-foreground"}`}>Standard</p>
                       <p className="text-xs font-medium text-muted-foreground mt-0.5">Base price</p>
                     </div>
-                    {/* Options */}
                     {customizationItem.variants.map((variant: any) => (
-                      <div 
+                      <div
                         key={variant.id}
                         onClick={() => setActiveVariant(variant)}
                         className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
@@ -436,7 +493,7 @@ export const OrderScreen: React.FC = () => {
                       >
                         <p className={`font-semibold text-sm ${activeVariant?.id === variant.id ? "text-primary" : "text-foreground"}`}>{variant.name}</p>
                         <p className="text-xs font-medium text-muted-foreground mt-0.5">
-                          {variant.priceOption > 0 ? `+$${variant.priceOption.toFixed(2)}` : "No extra cost"}
+                          {variant.priceOption > 0 ? `+₹${variant.priceOption.toFixed(2)}` : "No extra cost"}
                         </p>
                       </div>
                     ))}
@@ -450,9 +507,9 @@ export const OrderScreen: React.FC = () => {
                   <Label className="text-base font-bold">Add-ons</Label>
                   <div className="space-y-2.5">
                     {customizationItem.toppings.map((topping: any) => {
-                      const isActive = !!activeToppings.find(t => t.id === topping.id);
+                      const isActive = !!activeToppings.find((t: any) => t.id === topping.id);
                       return (
-                        <div 
+                        <div
                           key={topping.id}
                           onClick={() => toggleTopping(topping)}
                           className={`flex items-center justify-between p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
@@ -466,12 +523,19 @@ export const OrderScreen: React.FC = () => {
                             </div>
                           </div>
                           <span className="text-sm font-bold text-muted-foreground">
-                            {topping.price > 0 ? `+$${topping.price.toFixed(2)}` : "Free"}
+                            {topping.price > 0 ? `+₹${topping.price.toFixed(2)}` : "Free"}
                           </span>
                         </div>
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* No variants/toppings message */}
+              {(!customizationItem?.variants || customizationItem.variants.length === 0) && (!customizationItem?.toppings || customizationItem.toppings.length === 0) && (
+                <div className="text-center py-4 text-sm text-muted-foreground bg-muted/30 rounded-xl border border-dashed">
+                  No variants or add-ons available for this item.
                 </div>
               )}
 
@@ -483,7 +547,7 @@ export const OrderScreen: React.FC = () => {
               className="w-full h-14 text-base font-bold rounded-xl active:scale-95 transition-all shadow-md"
               onClick={() => commitToCart(customizationItem.id, customizationItem.name, customModalPrice, activeVariant, activeToppings)}
             >
-              Add to Order • ${customModalPrice.toFixed(2)}
+              Add to Order • ₹{customModalPrice.toFixed(2)}
             </Button>
           </SheetFooter>
         </SheetContent>

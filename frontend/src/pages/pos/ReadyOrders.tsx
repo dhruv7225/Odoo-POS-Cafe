@@ -5,6 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Utensils, CheckCircle2, Clock } from "lucide-react";
+import { toast } from "sonner";
 
 export const ReadyOrders: React.FC = () => {
   const { getReadyOrders, markAsServed, tables } = usePOS();
@@ -13,6 +14,18 @@ export const ReadyOrders: React.FC = () => {
 
   const getTableNumber = (tableId: string) => {
     return tables.find(t => t.id === tableId)?.number || "??";
+  };
+
+  const handlePickup = async (orderId: string) => {
+    try {
+      await markAsServed(orderId);
+      // markAsServed calls orderApi.complete → backend sets order COMPLETED
+      // This removes it from:
+      //   - Waiter's ready orders (this list)
+      //   - Chef's "Ready for Pickup" column (ticket excluded when order is COMPLETED)
+    } catch (err: any) {
+      toast.error(err.message || "Failed to mark as served");
+    }
   };
 
   return (
@@ -38,7 +51,7 @@ export const ReadyOrders: React.FC = () => {
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">Kitchen is Preparing...</h2>
             <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-              There are currently no orders ready for pickup. Notifications will play once the chef finishes.
+              There are currently no orders ready for pickup. You'll be notified when the chef finishes.
             </p>
           </div>
         ) : (
@@ -49,9 +62,11 @@ export const ReadyOrders: React.FC = () => {
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2.5">
                       <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center text-lg font-bold shadow-md shadow-emerald-200">
-                        {getTableNumber(order.tableId)}
+                        {order.tableNo || getTableNumber(order.tableId)}
                       </div>
-                      <CardTitle className="text-base font-bold tracking-tight text-foreground">Table {getTableNumber(order.tableId)}</CardTitle>
+                      <CardTitle className="text-base font-bold tracking-tight text-foreground">
+                        Table {order.tableNo || getTableNumber(order.tableId)}
+                      </CardTitle>
                     </div>
                     <Badge variant="outline" className="bg-white border-emerald-200 text-emerald-600 font-semibold text-[10px] tracking-wide rounded-lg">
                       Ready Now
@@ -63,7 +78,7 @@ export const ReadyOrders: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                       <Clock size={12} className="text-emerald-500" />
-                      Placed {Math.floor((Date.now() - order.createdAt) / 60000)}m ago
+                      {order.orderNo} · Placed {Math.floor((Date.now() - order.createdAt) / 60000)}m ago
                     </div>
 
                     <div className="space-y-1.5 bg-muted/20 p-3.5 rounded-xl border border-border/50">
@@ -82,28 +97,16 @@ export const ReadyOrders: React.FC = () => {
                 <CardFooter className="p-4">
                   <Button
                     className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm rounded-xl shadow-md shadow-emerald-100 active:scale-95 transition-all flex items-center gap-2"
-                    onClick={() => markAsServed(order.id)}
+                    onClick={() => handlePickup(order.id)}
                   >
                     <CheckCircle2 size={18} strokeWidth={2.5} />
-                    Mark as Served
+                    Confirm Pickup & Serve
                   </Button>
                 </CardFooter>
               </Card>
             ))}
           </div>
         )}
-
-        {/* Legend */}
-        <div className="flex items-center justify-center gap-6 py-8 opacity-40">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Ready to serve</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary" />
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">In Preparation</span>
-          </div>
-        </div>
       </div>
     </POSLayout>
   );
