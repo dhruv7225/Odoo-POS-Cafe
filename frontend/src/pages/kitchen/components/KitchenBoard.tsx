@@ -39,7 +39,7 @@ export const KitchenBoard: React.FC<KitchenBoardProps> = ({ tickets, onRefresh }
   }, [tickets]);
 
   return (
-    <div className="flex h-full gap-5 min-w-max pb-4">
+    <div className="flex h-full gap-5 min-w-max pb-4 justify-center mx-auto">
       {STATUS_COLUMNS.map((column) => {
         const columnTickets = sortedTickets.filter(
           (t) => t.ticketStatus === column.id

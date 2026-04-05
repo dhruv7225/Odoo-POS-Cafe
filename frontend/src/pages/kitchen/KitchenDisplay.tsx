@@ -161,7 +161,7 @@ export const KitchenDisplay: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-x-auto overflow-y-hidden bg-background p-6">
+      <main className="flex-1 overflow-x-auto overflow-y-hidden bg-background p-6 flex items-start justify-center">
         <KitchenBoard tickets={tickets} onRefresh={loadTickets} />
       </main>
     </div>

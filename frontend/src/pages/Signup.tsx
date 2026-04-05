@@ -3,11 +3,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AuthLayout } from "@/layouts/AuthLayout";
+import { authApi } from "@/lib/api";
+import { toast } from "sonner";
 
 const signupSchema = z.object({
   fullName: z.string().min(2, "Full name is required"),
@@ -27,6 +29,7 @@ export const SignupPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
 
   const {
     register,
@@ -39,13 +42,28 @@ export const SignupPage: React.FC = () => {
     }
   });
 
+  const roleMap: Record<string, string> = {
+    admin: "ADMIN",
+    manager: "MANAGER",
+    staff: "WAITER",
+  };
+
   const onSubmit = async (data: SignupFormValues) => {
     setIsLoading(true);
-    // Simulate API call
-    console.log("Signup data:", data);
-    setTimeout(() => {
+    try {
+      await authApi.signup({
+        fullName: data.fullName,
+        email: data.email,
+        password: data.password,
+        roleName: roleMap[data.role] || "WAITER",
+      });
+      toast.success("Account created successfully! Please sign in.");
+      navigate("/login");
+    } catch (err: any) {
+      toast.error(err.message || "Signup failed. Please try again.");
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
